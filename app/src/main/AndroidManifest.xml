@@ -12,7 +12,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.FeedApp">
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.feed.FeedActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
