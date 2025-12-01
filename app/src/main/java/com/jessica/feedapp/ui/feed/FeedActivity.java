@@ -3,6 +3,7 @@ package com.jessica.feedapp.ui.feed;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -13,22 +14,23 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.jessica.feedapp.R;
 import com.jessica.feedapp.data.FeedRepository;
+import com.jessica.feedapp.exposure.ExposureDataProvider;
+import com.jessica.feedapp.exposure.ExposureEventType;
+import com.jessica.feedapp.exposure.ExposureTracker;
 import com.jessica.feedapp.model.FeedItem;
 
 import java.util.List;
 
-/**
- * Feed 主页面
- * - 使用 GridLayoutManager，支持单列/双列混排
- * - 下拉刷新 / 滑到底部加载更多
- */
 public class FeedActivity extends AppCompatActivity {
 
     private SwipeRefreshLayout swipeRefreshLayout;
     private RecyclerView recyclerView;
+    private TextView tvExposureLog;   // 可选，用于 UI 显示曝光日志
 
     private FeedAdapter adapter;
     private FeedRepository repository;
+
+    private ExposureTracker exposureTracker;
 
     private boolean isLoadingMore = false;
     private int loadedCount = 0;
@@ -47,21 +49,20 @@ public class FeedActivity extends AppCompatActivity {
 
         swipeRefreshLayout = findViewById(R.id.swipe_refresh);
         recyclerView = findViewById(R.id.recycler_feed);
+        tvExposureLog = findViewById(R.id.tv_exposure_log); // 如果你没加这个 TextView，可以删掉这一行和后面的使用
 
         repository = new FeedRepository();
         adapter = new FeedAdapter(this);
 
         initRecycler();
         initRefresh();
+        initExposureTracker();
 
         loadInitialData();
     }
 
     private void initRecycler() {
-        // 2 列 Grid 布局
         GridLayoutManager layoutManager = new GridLayoutManager(this, 2);
-
-        // 根据 item 的 spanSize 决定占几列
         layoutManager.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
             @Override
             public int getSpanSize(int position) {
@@ -72,7 +73,6 @@ public class FeedActivity extends AppCompatActivity {
         recyclerView.setLayoutManager(layoutManager);
         recyclerView.setAdapter(adapter);
 
-        // 简单的滑到底部加载更多逻辑
         recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(
@@ -96,6 +96,34 @@ public class FeedActivity extends AppCompatActivity {
 
     private void initRefresh() {
         swipeRefreshLayout.setOnRefreshListener(this::refreshData);
+    }
+
+    /**
+     * 初始化曝光跟踪器：
+     * - 用 adapter 提供 itemId
+     * - 在回调中简单更新日志 TextView
+     */
+    private void initExposureTracker() {
+        ExposureDataProvider dataProvider = position -> {
+            FeedItem item = adapter.getItemAt(position);
+            return item.getId();
+        };
+
+        exposureTracker = new ExposureTracker(
+                recyclerView,
+                dataProvider,
+                (itemId, eventType, visibleRatio) -> {
+                    String msg = "itemId=" + itemId
+                            + " | event=" + eventType
+                            + " | ratio=" + String.format("%.2f", visibleRatio);
+                    // UI 上显示最近一次事件（可选）
+                    if (tvExposureLog != null) {
+                        tvExposureLog.setText("曝光日志：" + msg);
+                    }
+                    // 如果需要，这里也可以做打点上报
+                    // e.g. sendExposureEventToServer(itemId, eventType, visibleRatio);
+                }
+        );
     }
 
     private void loadInitialData() {
