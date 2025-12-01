@@ -99,7 +99,10 @@ public class ExposureTracker {
                     ? 0f
                     : (visibleHeight * 1f / childHeight);
 
-            ExposureState prevState = stateMap.getOrDefault(itemId, ExposureState.NONE);
+            // ExposureState prevState = stateMap.getOrDefault(itemId, ExposureState.NONE); API24及以上才支持
+            ExposureState prevState = stateMap.containsKey(itemId)
+                    ? stateMap.get(itemId)
+                    : ExposureState.NONE; // API23支持写法
             ExposureState nowState;
 
             if (visibleRatio <= 0f) {
