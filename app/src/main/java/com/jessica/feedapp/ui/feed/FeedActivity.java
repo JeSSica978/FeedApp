@@ -7,7 +7,7 @@ import android.os.Looper;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
@@ -19,8 +19,8 @@ import java.util.List;
 
 /**
  * Feed 主页面
- * - 下拉刷新
- * - 滑动到底部加载更多
+ * - 使用 GridLayoutManager，支持单列/双列混排
+ * - 下拉刷新 / 滑到底部加载更多
  */
 public class FeedActivity extends AppCompatActivity {
 
@@ -58,11 +58,21 @@ public class FeedActivity extends AppCompatActivity {
     }
 
     private void initRecycler() {
-        LinearLayoutManager layoutManager = new LinearLayoutManager(this);
+        // 2 列 Grid 布局
+        GridLayoutManager layoutManager = new GridLayoutManager(this, 2);
+
+        // 根据 item 的 spanSize 决定占几列
+        layoutManager.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
+            @Override
+            public int getSpanSize(int position) {
+                return adapter.getSpanSizeForPosition(position);
+            }
+        });
+
         recyclerView.setLayoutManager(layoutManager);
         recyclerView.setAdapter(adapter);
 
-        // 简单的“滑到底部加载更多”监听
+        // 简单的滑到底部加载更多逻辑
         recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(
@@ -70,13 +80,12 @@ public class FeedActivity extends AppCompatActivity {
                     int dx,
                     int dy) {
                 super.onScrolled(rv, dx, dy);
-                if (dy <= 0) return; // 只关心向下滑动
+                if (dy <= 0) return;
 
                 int visibleCount = layoutManager.getChildCount();
                 int totalCount = layoutManager.getItemCount();
                 int firstVisiblePos = layoutManager.findFirstVisibleItemPosition();
 
-                // 滑到接近底部时触发加载更多
                 if (!isLoadingMore
                         && visibleCount + firstVisiblePos >= totalCount - 2) {
                     loadMoreData();
@@ -96,7 +105,7 @@ public class FeedActivity extends AppCompatActivity {
             loadedCount = items.size();
             adapter.setItems(items);
             swipeRefreshLayout.setRefreshing(false);
-        }, 500); // 模拟网络延迟
+        }, 500);
     }
 
     private void refreshData() {
