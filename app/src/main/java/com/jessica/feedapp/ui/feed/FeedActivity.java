@@ -2,25 +2,35 @@ package com.jessica.feedapp.ui.feed;
 
 import android.os.Bundle;
 
-import androidx.activity.EdgeToEdge;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.jessica.feedapp.R;
 
+/**
+ * 主 Feed 页面骨架
+ */
 public class FeedActivity extends AppCompatActivity {
 
+    private SwipeRefreshLayout swipeRefreshLayout;
+    private RecyclerView recyclerView;
+
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        EdgeToEdge.enable(this);
-        setContentView(R.layout.activity_main);
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
-            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
-            return insets;
-        });
+
+        // 可选：隐藏默认 action bar，使用我们自己的 title
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().hide();
+        }
+
+        setContentView(R.layout.activity_feed);
+
+        swipeRefreshLayout = findViewById(R.id.swipe_refresh);
+        recyclerView = findViewById(R.id.recycler_feed);
+
+        // 这里先不写逻辑，后面 feature/feed-framework 再补
     }
 }
