@@ -1,18 +1,40 @@
 package com.jessica.feedapp.model;
 
 /**
- * 单条 Feed 卡片的数据结构（简化版）
+ * 单条 Feed 卡片的数据结构
+ * 支持：
+ * - 不同卡片类型：纯文本卡 / 图文卡
+ * - 不同列宽：单列卡 / 占两列的大卡
  */
 public class FeedItem {
+
+    // 卡片类型
+    public static final int CARD_TYPE_TEXT = 0;       // 纯文本
+    public static final int CARD_TYPE_IMAGE_TEXT = 1; // 图文
+
+    // 列宽（span）
+    public static final int SPAN_SINGLE = 1; // 占一列
+    public static final int SPAN_DOUBLE = 2; // 占两列（整行）
 
     private final long id;
     private final String title;
     private final String content;
+    private final String imageUrl; // 这里先用占位，后面可接网络图
+    private final int cardType;
+    private final int spanSize;
 
-    public FeedItem(long id, String title, String content) {
+    public FeedItem(long id,
+                    String title,
+                    String content,
+                    String imageUrl,
+                    int cardType,
+                    int spanSize) {
         this.id = id;
         this.title = title;
         this.content = content;
+        this.imageUrl = imageUrl;
+        this.cardType = cardType;
+        this.spanSize = spanSize;
     }
 
     public long getId() {
@@ -25,5 +47,17 @@ public class FeedItem {
 
     public String getContent() {
         return content;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public int getCardType() {
+        return cardType;
+    }
+
+    public int getSpanSize() {
+        return spanSize;
     }
 }
