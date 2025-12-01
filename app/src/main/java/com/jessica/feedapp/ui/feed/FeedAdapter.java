@@ -5,6 +5,7 @@ import android.content.Context;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -17,11 +18,15 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 简化版 Feed 列表 Adapter
- * - 显示标题+摘要
- * - 支持长按删除卡片
+ * Feed 列表 Adapter
+ * - 支持两种 ViewType：纯文本卡 / 图文卡
+ * - 点击卡片：Toast 提示
+ * - 长按卡片：弹窗确认删除
  */
-public class FeedAdapter extends RecyclerView.Adapter<FeedAdapter.FeedViewHolder> {
+public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+
+    private static final int VIEW_TYPE_TEXT = 0;
+    private static final int VIEW_TYPE_IMAGE_TEXT = 1;
 
     private final List<FeedItem> data = new ArrayList<>();
     private final LayoutInflater inflater;
@@ -48,21 +53,72 @@ public class FeedAdapter extends RecyclerView.Adapter<FeedAdapter.FeedViewHolder
         return data.get(position);
     }
 
-    @NonNull
-    @Override
-    public FeedViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View view = inflater.inflate(R.layout.item_feed_text, parent, false);
-        return new FeedViewHolder(view);
+    /**
+     * 给 GridLayoutManager 用的 spanSize
+     */
+    public int getSpanSizeForPosition(int position) {
+        FeedItem item = data.get(position);
+        return item.getSpanSize();
     }
 
     @Override
-    public void onBindViewHolder(@NonNull FeedViewHolder holder, int position) {
+    public int getItemViewType(int position) {
         FeedItem item = data.get(position);
+        if (item.getCardType() == FeedItem.CARD_TYPE_TEXT) {
+            return VIEW_TYPE_TEXT;
+        } else {
+            return VIEW_TYPE_IMAGE_TEXT;
+        }
+    }
+
+    @Override
+    public int getItemCount() {
+        return data.size();
+    }
+
+    @NonNull
+    @Override
+    public RecyclerView.ViewHolder onCreateViewHolder(
+            @NonNull ViewGroup parent,
+            int viewType) {
+        if (viewType == VIEW_TYPE_TEXT) {
+            View view = inflater.inflate(R.layout.item_feed_text, parent, false);
+            return new TextViewHolder(view);
+        } else {
+            View view = inflater.inflate(R.layout.item_feed_image, parent, false);
+            return new ImageTextViewHolder(view);
+        }
+    }
+
+    @Override
+    public void onBindViewHolder(
+            @NonNull RecyclerView.ViewHolder holder,
+            int position) {
+        FeedItem item = data.get(position);
+        if (holder instanceof TextViewHolder) {
+            bindText((TextViewHolder) holder, item);
+        } else if (holder instanceof ImageTextViewHolder) {
+            bindImageText((ImageTextViewHolder) holder, item);
+        }
+    }
+
+    private void bindText(TextViewHolder holder, FeedItem item) {
         holder.tvTitle.setText(item.getTitle());
         holder.tvContent.setText(item.getContent());
+        setupItemClicks(holder.itemView, item, holder.getAdapterPosition());
+    }
 
-        // 点击事件（这里简单 Toast，可后续扩展）
-        holder.itemView.setOnClickListener(v -> {
+    private void bindImageText(ImageTextViewHolder holder, FeedItem item) {
+        holder.tvTitle.setText(item.getTitle());
+        holder.tvContent.setText(item.getContent());
+        // 暂时用本地占位图，后面可以接网络图片加载库（如 Glide）
+        holder.ivImage.setImageResource(R.drawable.sample_image);
+        setupItemClicks(holder.itemView, item, holder.getAdapterPosition());
+    }
+
+    private void setupItemClicks(View itemView, FeedItem item, int position) {
+        // 点击
+        itemView.setOnClickListener(v -> {
             android.widget.Toast.makeText(
                     context,
                     "点击卡片：" + item.getTitle(),
@@ -71,13 +127,13 @@ public class FeedAdapter extends RecyclerView.Adapter<FeedAdapter.FeedViewHolder
         });
 
         // 长按删除
-        holder.itemView.setOnLongClickListener(v -> {
+        itemView.setOnLongClickListener(v -> {
             new AlertDialog.Builder(context)
                     .setTitle("删除卡片")
                     .setMessage("确定要删除这条卡片吗？")
                     .setPositiveButton("删除", (dialog, which) -> {
-                        int pos = holder.getAdapterPosition();
-                        if (pos != RecyclerView.NO_POSITION) {
+                        int pos = position;
+                        if (pos >= 0 && pos < data.size()) {
                             data.remove(pos);
                             notifyItemRemoved(pos);
                         }
@@ -88,19 +144,29 @@ public class FeedAdapter extends RecyclerView.Adapter<FeedAdapter.FeedViewHolder
         });
     }
 
-    @Override
-    public int getItemCount() {
-        return data.size();
-    }
+    // --- ViewHolder 定义 ---
 
-    static class FeedViewHolder extends RecyclerView.ViewHolder {
+    static class TextViewHolder extends RecyclerView.ViewHolder {
         TextView tvTitle;
         TextView tvContent;
 
-        FeedViewHolder(@NonNull View itemView) {
+        TextViewHolder(@NonNull View itemView) {
             super(itemView);
             tvTitle = itemView.findViewById(R.id.tv_title);
             tvContent = itemView.findViewById(R.id.tv_content);
+        }
+    }
+
+    static class ImageTextViewHolder extends RecyclerView.ViewHolder {
+        TextView tvTitle;
+        TextView tvContent;
+        ImageView ivImage;
+
+        ImageTextViewHolder(@NonNull View itemView) {
+            super(itemView);
+            tvTitle = itemView.findViewById(R.id.tv_title);
+            tvContent = itemView.findViewById(R.id.tv_content);
+            ivImage = itemView.findViewById(R.id.iv_image);
         }
     }
 }
