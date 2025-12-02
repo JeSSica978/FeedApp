@@ -20,6 +20,9 @@ import com.jessica.feedapp.exposure.ExposureTracker;
 import com.jessica.feedapp.model.FeedItem;
 
 import java.util.List;
+import android.widget.Toast;
+import java.util.Random;
+
 
 public class FeedActivity extends AppCompatActivity {
 
@@ -37,6 +40,13 @@ public class FeedActivity extends AppCompatActivity {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
 
+    private void retryLoadMore() {
+        if (!isLoadingMore) {
+            loadMoreData();
+        }
+    }
+
+
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -49,7 +59,7 @@ public class FeedActivity extends AppCompatActivity {
 
         swipeRefreshLayout = findViewById(R.id.swipe_refresh);
         recyclerView = findViewById(R.id.recycler_feed);
-        tvExposureLog = findViewById(R.id.tv_exposure_log); // 如果你没加这个 TextView，可以删掉这一行和后面的使用
+        tvExposureLog = findViewById(R.id.tv_exposure_log); // TextView
 
         repository = new FeedRepository();
         adapter = new FeedAdapter(this);
@@ -73,6 +83,9 @@ public class FeedActivity extends AppCompatActivity {
         recyclerView.setLayoutManager(layoutManager);
         recyclerView.setAdapter(adapter);
 
+        // NEW：点击 footer“加载失败，点击重试”时重新触发 loadMore
+        adapter.setOnLoadMoreRetryListener(this::retryLoadMore);
+
         recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(
@@ -80,7 +93,7 @@ public class FeedActivity extends AppCompatActivity {
                     int dx,
                     int dy) {
                 super.onScrolled(rv, dx, dy);
-                if (dy <= 0) return;
+                if (dy <= 0) return; // 只关注向上滑
 
                 int visibleCount = layoutManager.getChildCount();
                 int totalCount = layoutManager.getItemCount();
@@ -95,6 +108,7 @@ public class FeedActivity extends AppCompatActivity {
     }
 
     private void initRefresh() {
+        // 当用户下拉并松手时，会回调到 refreshData()
         swipeRefreshLayout.setOnRefreshListener(this::refreshData);
     }
 
@@ -106,9 +120,10 @@ public class FeedActivity extends AppCompatActivity {
     private void initExposureTracker() {
         ExposureDataProvider dataProvider = position -> {
             FeedItem item = adapter.getItemAt(position);
-            return item.getId();
+            return item.getId(); // 使用 FeedItem.id 作为曝光唯一标识
         };
 
+        // 告诉曝光系统：position 对应的是哪个 itemId
         exposureTracker = new ExposureTracker(
                 recyclerView,
                 dataProvider,
@@ -129,29 +144,52 @@ public class FeedActivity extends AppCompatActivity {
     private void loadInitialData() {
         swipeRefreshLayout.setRefreshing(true);
         handler.postDelayed(() -> {
-            List<FeedItem> items = repository.loadInitial();
+            List<FeedItem> items = repository.loadInitial(); // <-- 从仓库拿数据（模拟服务端 首屏数据）
             loadedCount = items.size();
-            adapter.setItems(items);
+            adapter.setItems(items);                         // <-- 把数据给 Adapter
             swipeRefreshLayout.setRefreshing(false);
         }, 500);
     }
 
     private void refreshData() {
+        swipeRefreshLayout.setRefreshing(true);
+
         handler.postDelayed(() -> {
-            List<FeedItem> items = repository.refresh();
-            loadedCount = items.size();
-            adapter.setItems(items);
+            boolean success = random.nextFloat() < 0.8f;
+            if (success) {
+                List<FeedItem> items = repository.refresh();
+                loadedCount = items.size();
+                adapter.setItems(items);
+            } else {
+                Toast.makeText(this, "刷新失败，请稍后重试", Toast.LENGTH_SHORT).show();
+            }
+
             swipeRefreshLayout.setRefreshing(false);
         }, 800);
     }
 
+
+    private final Random random = new Random(); // 在类成员变量区加这个
+
     private void loadMoreData() {
         isLoadingMore = true;
+        adapter.showLoadMoreLoading();   // 显示“正在加载更多...”
+
         handler.postDelayed(() -> {
-            List<FeedItem> more = repository.loadMore(loadedCount);
-            loadedCount += more.size();
-            adapter.appendItems(more);
+            boolean success = random.nextFloat() < 0.8f; // 80% 成功，20% 失败
+
+            if (success) {
+                List<FeedItem> more = repository.loadMore(loadedCount);
+                loadedCount += more.size();
+                adapter.appendItems(more);
+                adapter.hideFooter();    // 加载完成，隐藏 footer
+            } else {
+                adapter.showLoadMoreError(); // “加载失败，点击重试”
+                Toast.makeText(this, "加载更多失败，请点击重试", Toast.LENGTH_SHORT).show();
+            }
+
             isLoadingMore = false;
-        }, 1000);
+        }, 800);
     }
+
 }
