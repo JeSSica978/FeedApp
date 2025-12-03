@@ -34,15 +34,26 @@ public class FeedRepository {
         for (int i = 0; i < count; i++) {
             long id = startId + i;
 
-            // 每隔一条切换卡片类型：0 文本卡，1 图文卡
-            int cardType = (i % 2 == 0)
-                    ? FeedItem.CARD_TYPE_TEXT
-                    : FeedItem.CARD_TYPE_IMAGE_TEXT;
+            // 每 5 条来一条视频卡片，其余保持原来的文本/图文逻辑
+            int cardType;
+            if (i % 5 == 0) {
+                cardType = FeedItem.CARD_TYPE_VIDEO; // 视频卡片
+            } else if (i % 2 == 0) { // 每隔一条切换卡片类型：0 文本卡，1 图文卡
+                cardType = FeedItem.CARD_TYPE_TEXT;
+            } else {
+                cardType = FeedItem.CARD_TYPE_IMAGE_TEXT;
+            }
 
-            // 随机单列 / 双列
-            int span = (random.nextBoolean())
-                    ? FeedItem.SPAN_SINGLE
-                    : FeedItem.SPAN_DOUBLE;
+            // 视频卡片强制占两列，其余随机
+            int span;
+            if (cardType == FeedItem.CARD_TYPE_VIDEO) {
+                span = FeedItem.SPAN_DOUBLE;
+            } else {
+                // // 随机单列 / 双列
+                span = random.nextBoolean()
+                        ? FeedItem.SPAN_SINGLE
+                        : FeedItem.SPAN_DOUBLE;
+            }
 
             String title = "标题 " + id;
             String content = "这里是内容摘要（id=" + id + "），用于展示多行文本效果。";

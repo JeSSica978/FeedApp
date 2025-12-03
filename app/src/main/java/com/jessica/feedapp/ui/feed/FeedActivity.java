@@ -83,22 +83,20 @@ public class FeedActivity extends AppCompatActivity {
         recyclerView.setLayoutManager(layoutManager);
         recyclerView.setAdapter(adapter);
 
-        // NEW：点击 footer“加载失败，点击重试”时重新触发 loadMore
+        // footer“加载失败，点击重试”时重新触发 loadMore
         adapter.setOnLoadMoreRetryListener(this::retryLoadMore);
 
         recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
-            public void onScrolled(
-                    @NonNull RecyclerView rv,
-                    int dx,
-                    int dy) {
+            public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
                 super.onScrolled(rv, dx, dy);
-                if (dy <= 0) return; // 只关注向上滑
+                if (dy <= 0) return;
 
                 int visibleCount = layoutManager.getChildCount();
                 int totalCount = layoutManager.getItemCount();
                 int firstVisiblePos = layoutManager.findFirstVisibleItemPosition();
 
+                // 接近底部 & 当前不在加载中 → 触发 loadMore
                 if (!isLoadingMore
                         && visibleCount + firstVisiblePos >= totalCount - 2) {
                     loadMoreData();
@@ -118,8 +116,14 @@ public class FeedActivity extends AppCompatActivity {
      * - 在回调中简单更新日志 TextView
      */
     private void initExposureTracker() {
+        tvExposureLog = findViewById(R.id.tv_exposure_log);
+
         ExposureDataProvider dataProvider = position -> {
             FeedItem item = adapter.getItemAt(position);
+            if (item == null) {
+                // 说明这个 position 不是正常的数据条目（比如 footer），直接返回无效 id
+                return -1L;
+            }
             return item.getId(); // 使用 FeedItem.id 作为曝光唯一标识
         };
 
@@ -173,18 +177,18 @@ public class FeedActivity extends AppCompatActivity {
 
     private void loadMoreData() {
         isLoadingMore = true;
-        adapter.showLoadMoreLoading();   // 显示“正在加载更多...”
+        adapter.showLoadMoreLoading();   // 开始 loadMore：footer 显示“正在加载更多…”
 
         handler.postDelayed(() -> {
-            boolean success = random.nextFloat() < 0.8f; // 80% 成功，20% 失败
+            boolean success = random.nextFloat() < 0.6f; // 60% 成功，40% 失败
 
             if (success) {
                 List<FeedItem> more = repository.loadMore(loadedCount);
                 loadedCount += more.size();
                 adapter.appendItems(more);
-                adapter.hideFooter();    // 加载完成，隐藏 footer
+                adapter.hideFooter();    // 加载成功：追加数据 & 隐藏 footer
             } else {
-                adapter.showLoadMoreError(); // “加载失败，点击重试”
+                adapter.showLoadMoreError(); // 加载失败：footer 显示“加载失败，点击重试”
                 Toast.makeText(this, "加载更多失败，请点击重试", Toast.LENGTH_SHORT).show();
             }
 

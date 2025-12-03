@@ -11,6 +11,7 @@ public class FeedItem {
     // 卡片类型
     public static final int CARD_TYPE_TEXT = 0;       // 纯文本
     public static final int CARD_TYPE_IMAGE_TEXT = 1; // 图文
+    public static final int CARD_TYPE_VIDEO = 2;  //视频
 
     // 列宽（span）
     public static final int SPAN_SINGLE = 1; // 占一列

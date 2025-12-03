@@ -84,6 +84,10 @@ public class ExposureTracker {
             if (position == RecyclerView.NO_POSITION) continue;
 
             long itemId = dataProvider.getItemIdForPosition(position);
+            // 无效 id（比如 -1）直接忽略，不算曝光
+            if (itemId < 0) {
+                continue;
+            }
             seenThisPass.add(itemId);
 
             int childTop = child.getTop();
