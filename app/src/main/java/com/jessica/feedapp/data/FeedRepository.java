@@ -9,6 +9,8 @@ import java.util.Random;
 /**
  * 模拟服务端的 Feed 数据仓库
  * - 生成不同类型、不同列宽的卡片
+ * 当前所有“来自服务器”的列表数据，都从这里产生。
+ * UI 层只知道调用 loadInitial/refresh/loadMore，并不知道数据是本地造的。
  */
 public class FeedRepository {
 
@@ -19,16 +21,17 @@ public class FeedRepository {
         return generateItems(0, 20);
     }
 
-    // 下拉刷新
+    // 下拉刷新数据
     public List<FeedItem> refresh() {
         return generateItems(1000, 20);
     }
 
-    // 加载更多
+    // 加载更多，从 offset 开始往后造 10 条
     public List<FeedItem> loadMore(int offset) {
         return generateItems(offset, 10);
     }
 
+    // 真正造数据 + 决定卡片类型/列宽
     private List<FeedItem> generateItems(int startId, int count) {
         List<FeedItem> list = new ArrayList<>();
         for (int i = 0; i < count; i++) {

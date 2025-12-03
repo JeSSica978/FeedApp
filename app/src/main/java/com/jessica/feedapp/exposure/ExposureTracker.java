@@ -65,7 +65,7 @@ public class ExposureTracker {
     }
 
     /**
-     * 遍历当前可见的 child，计算可见比例并触发状态机
+     * 遍历当前可见区域的所有卡片，根据可见比例驱动状态机并发曝光事件
      */
     private void checkExposure() {
         int childCount = recyclerView.getChildCount();
@@ -78,11 +78,14 @@ public class ExposureTracker {
         // 标记这一次遍历中“出现过”的 itemId
         Set<Long> seenThisPass = new HashSet<>();
 
+        // 遍历当前所有可见 child view
         for (int i = 0; i < childCount; i++) {
             View child = recyclerView.getChildAt(i);
+            // 通过 getChildAdapterPosition() 拿到 position
             int position = recyclerView.getChildAdapterPosition(child);
             if (position == RecyclerView.NO_POSITION) continue;
 
+            // 调 dataProvider.getItemIdForPosition(position) 拿到 itemId
             long itemId = dataProvider.getItemIdForPosition(position);
             // 无效 id（比如 -1）直接忽略，不算曝光
             if (itemId < 0) {
@@ -90,6 +93,7 @@ public class ExposureTracker {
             }
             seenThisPass.add(itemId);
 
+            // 根据 child 在 RecyclerView 里的可见高度，算出 visibleRatio
             int childTop = child.getTop();
             int childBottom = child.getBottom();
             int childHeight = child.getHeight();
@@ -104,6 +108,8 @@ public class ExposureTracker {
                     : (visibleHeight * 1f / childHeight);
 
             // ExposureState prevState = stateMap.getOrDefault(itemId, ExposureState.NONE); API24及以上才支持
+            // 用一个 stateMap<itemId, ExposureState> 做状态机
+            // 从旧状态 + 当前可见比例 → 决定要不要发事件（ENTER/OVER_HALF/FULL_VISIBLE），并更新状态
             ExposureState prevState = stateMap.containsKey(itemId)
                     ? stateMap.get(itemId)
                     : ExposureState.NONE; // API23支持写法
@@ -133,7 +139,7 @@ public class ExposureTracker {
             if (!seenThisPass.contains(id)) {
                 ExposureState prev = stateMap.get(id);
                 if (prev != null && prev != ExposureState.NONE) {
-                    fireEvent(id, ExposureEventType.DISAPPEAR, 0f);
+                    fireEvent(id, ExposureEventType.DISAPPEAR, 0f); // 遍历完后，把这一轮“没出现过”的旧 itemId 全部标记为 DISAPPEAR
                     stateMap.put(id, ExposureState.NONE);
                 }
             }

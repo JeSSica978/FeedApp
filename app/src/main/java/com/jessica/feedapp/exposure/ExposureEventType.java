@@ -1,6 +1,7 @@
 package com.jessica.feedapp.exposure;
 
 /**
+ * EventType: 这一帧发生的事件（状态变化）
  * 对外回调使用的曝光事件类型
  */
 public enum ExposureEventType {

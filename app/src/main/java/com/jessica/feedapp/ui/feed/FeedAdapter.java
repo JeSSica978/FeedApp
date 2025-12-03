@@ -32,6 +32,7 @@ import java.util.List;
 
 public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
+    // 四种布局类型
     private static final int VIEW_TYPE_TEXT = 0;
     private static final int VIEW_TYPE_IMAGE_TEXT = 1;
     private static final int VIEW_TYPE_VIDEO = 2;
@@ -42,6 +43,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final List<FeedItem> data = new ArrayList<>();
 
     // ----- loadMore Footer 状态 -----
+    // 控制底部加载更多那一行的显示文案和状态条
     private boolean showFooter = false;
     private boolean footerLoading = false;
     private boolean footerError = false;
@@ -62,7 +64,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     // ----- 对外数据操作 -----
-
+    // 重置列表
     public void setItems(List<FeedItem> items) {
         data.clear();
         if (items != null) {
@@ -71,6 +73,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         notifyDataSetChanged();
     }
 
+    // 追加数据（用于 loadMore）
     public void appendItems(List<FeedItem> items) {
         if (items == null || items.isEmpty()) return;
         int start = data.size();
@@ -78,6 +81,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         notifyItemRangeInserted(start, items.size());
     }
 
+    // 给曝光模块用的，从“Adapter 的 position”拿到真正的 FeedItem
     public FeedItem getItemAt(int position) {
         // 注意：data.size() 只包含真实的 feed 条目，不包含 footer
         if (position < 0 || position >= data.size()) return null;
@@ -128,7 +132,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
     }
 
-    // 内部小工具：刷新 footer 这一行
+    // 内部小工具：刷新 footer 这一行  把变更通知 RecyclerView
     private void notifyFooterChanged() {
         if (showFooter) {
             notifyItemChanged(getItemCount() - 1);
@@ -138,7 +142,6 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     // ----- RecyclerView.Adapter 必备实现 -----
-
     @Override
     public int getItemCount() {
         return data.size() + (showFooter ? 1 : 0);
@@ -165,6 +168,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
     }
 
+    // 按 viewType inflate 对应的 xml
     @NonNull
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(
@@ -188,6 +192,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     public void onBindViewHolder(
             @NonNull RecyclerView.ViewHolder holder, int position) {
 
+        // 如果是 footer → bindFooter()
         if (holder instanceof FooterViewHolder) {
             bindFooter((FooterViewHolder) holder);
             return;
@@ -196,6 +201,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         FeedItem item = data.get(position);
         if (item == null) return;
 
+        // 否则根据实际 holder 类型调用 bindText / bindImageText / bindVideo
         if (holder instanceof TextViewHolder) {
             bindText((TextViewHolder) holder, item, position);
         } else if (holder instanceof ImageTextViewHolder) {
@@ -305,6 +311,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
     }
 
+    // 视频卡片模拟播放 做一个 5s 倒计时来模拟“自动播放”和“停止播放”。
     class VideoViewHolder extends RecyclerView.ViewHolder {
         TextView tvTitle;
         TextView tvContent;

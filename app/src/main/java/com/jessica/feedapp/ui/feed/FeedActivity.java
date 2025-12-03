@@ -23,22 +23,18 @@ import java.util.List;
 import android.widget.Toast;
 import java.util.Random;
 
-
 public class FeedActivity extends AppCompatActivity {
 
-    private SwipeRefreshLayout swipeRefreshLayout;
-    private RecyclerView recyclerView;
-    private TextView tvExposureLog;   // 可选，用于 UI 显示曝光日志
-
-    private FeedAdapter adapter;
-    private FeedRepository repository;
-
+    private SwipeRefreshLayout swipeRefreshLayout; // 下拉刷新控件
+    private RecyclerView recyclerView; // 信息流列表
+    private TextView tvExposureLog;  // 曝光日志显示区
+    private FeedAdapter adapter; // 适配器
+    private FeedRepository repository; // 数据源
     private ExposureTracker exposureTracker;
-
-    private boolean isLoadingMore = false;
-    private int loadedCount = 0;
-
-    private final Handler handler = new Handler(Looper.getMainLooper());
+    private boolean isLoadingMore = false; // 控制 loadMore
+    private int loadedCount = 0; // 控制 loadMore
+    private final Handler handler = new Handler(Looper.getMainLooper()); // 模拟网络延时
+    private final Random random = new Random(); // 控制“请求成功/失败概率”
 
     private void retryLoadMore() {
         if (!isLoadingMore) {
@@ -52,7 +48,7 @@ public class FeedActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
 
         if (getSupportActionBar() != null) {
-            getSupportActionBar().hide();
+            getSupportActionBar().hide(); // 隐藏 ActionBar
         }
 
         setContentView(R.layout.activity_feed);
@@ -68,7 +64,7 @@ public class FeedActivity extends AppCompatActivity {
         initRefresh();
         initExposureTracker();
 
-        loadInitialData();
+        loadInitialData(); // 加载首屏
     }
 
     private void initRecycler() {
@@ -76,7 +72,7 @@ public class FeedActivity extends AppCompatActivity {
         layoutManager.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
             @Override
             public int getSpanSize(int position) {
-                return adapter.getSpanSizeForPosition(position);
+                return adapter.getSpanSizeForPosition(position); // 决定单/双列
             }
         });
 
@@ -147,7 +143,7 @@ public class FeedActivity extends AppCompatActivity {
 
     private void loadInitialData() {
         swipeRefreshLayout.setRefreshing(true);
-        handler.postDelayed(() -> {
+        handler.postDelayed(() -> { // 模拟网络耗时
             List<FeedItem> items = repository.loadInitial(); // <-- 从仓库拿数据（模拟服务端 首屏数据）
             loadedCount = items.size();
             adapter.setItems(items);                         // <-- 把数据给 Adapter
@@ -171,9 +167,6 @@ public class FeedActivity extends AppCompatActivity {
             swipeRefreshLayout.setRefreshing(false);
         }, 800);
     }
-
-
-    private final Random random = new Random(); // 在类成员变量区加这个
 
     private void loadMoreData() {
         isLoadingMore = true;

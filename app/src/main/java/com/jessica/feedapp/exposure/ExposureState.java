@@ -1,6 +1,7 @@
 package com.jessica.feedapp.exposure;
 
 /**
+ * State: 当前阶段
  * 内部使用的曝光状态（当前这一帧卡片的可见程度）
  */
 public enum ExposureState {
