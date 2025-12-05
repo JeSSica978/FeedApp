@@ -1,7 +1,6 @@
 package com.jessica.feedapp.ui.feed;
 
 import android.content.Context;
-import android.content.DialogInterface;
 import android.os.CountDownTimer;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -262,7 +261,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     // ----- 点击 / 长按逻辑（点击 Toast，长按删卡） -----
     private void setupItemClicks(View itemView, FeedItem item, int position) {
-        // 单机Toast
+        // 单击Toast
         itemView.setOnClickListener(v ->
                 Toast.makeText(context, "点击卡片：" + item.getTitle(),
                         Toast.LENGTH_SHORT).show()

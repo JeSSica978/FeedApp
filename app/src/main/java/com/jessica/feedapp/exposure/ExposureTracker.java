@@ -139,7 +139,7 @@ public class ExposureTracker {
             if (!seenThisPass.contains(id)) {
                 ExposureState prev = stateMap.get(id);
                 if (prev != null && prev != ExposureState.NONE) {
-                    fireEvent(id, ExposureEventType.DISAPPEAR, 0f); // 遍历完后，把这一轮“没出现过”的旧 itemId 全部标记为 DISAPPEAR
+                    fireEvent(id, ExposureEventType.DISAPPEAR, 0f); //
                     stateMap.put(id, ExposureState.NONE);
                 }
             }
