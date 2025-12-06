@@ -60,10 +60,17 @@ public class FeedRepository {
 
             String title = "标题 " + id;
             String content = "这里是内容摘要（id=" + id + "），用于展示多行文本效果。";
-            // 暂时不用真实 URL，用空字符串占位
-            String imageUrl = "";
+
+            String imageUrl;
+            if (cardType == FeedItem.CARD_TYPE_VIDEO) {
+                // 使用一个公开的小视频作为 Demo
+                imageUrl = "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_10MB.mp4";
+            } else {
+                imageUrl = "";
+            }
 
             list.add(new FeedItem(id, title, content, imageUrl, cardType, span));
+
         }
         return list;
     }

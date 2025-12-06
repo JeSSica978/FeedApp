@@ -1,7 +1,6 @@
 package com.jessica.feedapp.ui.feed;
 
 import android.content.Context;
-import android.os.CountDownTimer;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -14,8 +13,10 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.exoplayer2.ui.PlayerView;
 import com.jessica.feedapp.R;
 import com.jessica.feedapp.model.FeedItem;
+import com.jessica.feedapp.player.FeedVideoManager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -41,6 +42,8 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final LayoutInflater inflater;
     private final List<FeedItem> data = new ArrayList<>();
 
+    private final FeedVideoManager videoManager;
+
     // ----- loadMore Footer 状态 -----
     // 控制底部加载更多那一行的显示文案和状态条
     private boolean showFooter = false;
@@ -54,10 +57,12 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
     private OnLoadMoreRetryListener loadMoreRetryListener;
 
-    public FeedAdapter(Context context) {
+    public FeedAdapter(Context context, FeedVideoManager videoManager) {
         this.context = context;
         this.inflater = LayoutInflater.from(context);
+        this.videoManager = videoManager;
     }
+
 
     public void setOnLoadMoreRetryListener(OnLoadMoreRetryListener listener) {
         this.loadMoreRetryListener = listener;
@@ -221,9 +226,11 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     public void onViewRecycled(@NonNull RecyclerView.ViewHolder holder) {
         super.onViewRecycled(holder);
         if (holder instanceof VideoViewHolder) {
-            ((VideoViewHolder) holder).stopDemoPlay();
+            VideoViewHolder videoHolder = (VideoViewHolder) holder;
+            videoManager.onViewRecycled(videoHolder.playerView);
         }
     }
+
 
     // ----- 具体绑定逻辑 -----
     private void bindText(TextViewHolder holder, FeedItem item, int position) {
@@ -243,9 +250,20 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private void bindVideo(VideoViewHolder holder, FeedItem item, int position) {
         holder.tvTitle.setText("[视频] " + item.getTitle());
         holder.tvContent.setText(item.getContent());
-        holder.startDemoPlay(); // 进入屏幕就“自动播放”
+
+        // 绑定播放器并自动播放
+        videoManager.bindAndPlay(holder.playerView, item);
+        holder.tvCountdown.setText("点击视频区域可暂停/继续");
+
+        // 视频区域点击 → 播放/暂停
+        holder.playerView.setOnClickListener(v ->
+                videoManager.togglePlay(holder.playerView, item)
+        );
+
+        // 保留原有的点击 / 长按逻辑（卡片整体）
         setupItemClicks(holder.itemView, item, position);
     }
+
 
     private void bindFooter(FooterViewHolder holder) {
         holder.tvMessage.setOnClickListener(null);
@@ -317,51 +335,18 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
     }
 
-    // 视频卡片模拟播放 做一个 5s 倒计时来模拟“自动播放”和“停止播放”。
     class VideoViewHolder extends RecyclerView.ViewHolder {
         TextView tvTitle;
         TextView tvContent;
         TextView tvCountdown;
-        CountDownTimer timer;
+        PlayerView playerView;
 
         VideoViewHolder(@NonNull View itemView) {
             super(itemView);
             tvTitle = itemView.findViewById(R.id.tv_title);
             tvContent = itemView.findViewById(R.id.tv_content);
             tvCountdown = itemView.findViewById(R.id.tv_video_countdown);
-        }
-
-        void startDemoPlay() {
-            cancelTimer();
-            final int totalSeconds = 5;
-            tvCountdown.setText("播放中 " + totalSeconds + "s");
-
-            timer = new CountDownTimer(totalSeconds * 1000L, 1000L) {
-                int remain = totalSeconds;
-
-                @Override
-                public void onTick(long millisUntilFinished) {
-                    remain--;
-                    tvCountdown.setText("播放中 " + remain + "s");
-                }
-
-                @Override
-                public void onFinish() {
-                    tvCountdown.setText("播放结束");
-                }
-            }.start();
-        }
-
-        void stopDemoPlay() {
-            cancelTimer();
-            tvCountdown.setText("待播放");
-        }
-
-        void cancelTimer() {
-            if (timer != null) {
-                timer.cancel();
-                timer = null;
-            }
+            playerView = itemView.findViewById(R.id.player_view);
         }
     }
 
