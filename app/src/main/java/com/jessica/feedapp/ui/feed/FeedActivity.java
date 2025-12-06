@@ -472,6 +472,7 @@ public class FeedActivity extends AppCompatActivity {
         }
     }
 
+    //
     @Override
     protected void onDestroy() {
         super.onDestroy();
