@@ -17,23 +17,26 @@ import com.google.android.exoplayer2.ui.PlayerView;
 import com.jessica.feedapp.R;
 import com.jessica.feedapp.model.FeedItem;
 import com.jessica.feedapp.player.FeedVideoManager;
+import com.jessica.feedapp.ui.feed.card.CardBinder;
+import com.jessica.feedapp.ui.feed.card.ImageTextCardBinder;
+import com.jessica.feedapp.ui.feed.card.TextCardBinder;
+import com.jessica.feedapp.ui.feed.card.VideoCardBinder;
 
 import java.util.ArrayList;
 import java.util.List;
 
+import android.util.SparseArray;
+
 /**
- * 信息流列表适配器：
- * - 文本 / 图文 / 视频 三种卡片
+ * 信息流列表适配器（插件式卡片扩展）：
+ * - 文本 / 图文 / 视频 卡片由独立的 CardBinder 实现
  * - 底部 footer 展示加载更多状态
  * - 支持长按删卡
  * - 为曝光统计提供 getItemAt / getSpanSizeForPosition
  */
 public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
-    // ===== ViewType 定义 =====
-    private static final int VIEW_TYPE_TEXT = 0;
-    private static final int VIEW_TYPE_IMAGE_TEXT = 1;
-    private static final int VIEW_TYPE_VIDEO = 2;
+    // ===== Footer ViewType =====
     private static final int VIEW_TYPE_FOOTER = 100;
 
     // ===== Footer 状态 =====
@@ -53,10 +56,27 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     private final FeedVideoManager videoManager;
 
+    // ===== Binder 插件管理 =====
+    private final List<CardBinder<? extends RecyclerView.ViewHolder>> cardBinders = new ArrayList<>();
+    private final SparseArray<CardBinder<? extends RecyclerView.ViewHolder>> binderMap = new SparseArray<>();
+
     public FeedAdapter(Context context, FeedVideoManager videoManager) {
         this.context = context;
         this.inflater = LayoutInflater.from(context);
         this.videoManager = videoManager;
+
+        // 注册三种默认卡片 Binder
+        registerBinder(new TextCardBinder(this));
+        registerBinder(new ImageTextCardBinder(this));
+        registerBinder(new VideoCardBinder(this, videoManager));
+    }
+
+    /**
+     * 注册一个新的卡片 Binder（用于插件式扩展）
+     */
+    public void registerBinder(CardBinder<? extends RecyclerView.ViewHolder> binder) {
+        cardBinders.add(binder);
+        binderMap.put(binder.getViewType(), binder);
     }
 
     public void setOnLoadMoreRetryListener(OnLoadMoreRetryListener listener) {
@@ -130,7 +150,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     /**
      * 暴露给 GridLayoutManager 的 SpanSizeLookup：
      * - footer 占满两列；
-     * - 正常 item 使用自身的 spanSize。
+     * - 正常 item 使用 Binder 的 spanSize。
      */
     public int getSpanSizeForPosition(int position) {
         if (isFooterPosition(position)) {
@@ -138,7 +158,12 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
         FeedItem item = getItemAt(position);
         if (item == null) return 2;
-        return item.getSpanSize();
+
+        CardBinder<? extends RecyclerView.ViewHolder> binder = findBinderForItem(item);
+        if (binder == null) {
+            return item.getSpanSize();
+        }
+        return binder.getSpanSize(item);
     }
 
     // ===== Adapter 核心实现 =====
@@ -158,14 +183,21 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             return VIEW_TYPE_FOOTER;
         }
         FeedItem item = data.get(position);
-        int cardType = item.getCardType();
-        if (cardType == FeedItem.CARD_TYPE_VIDEO) {
-            return VIEW_TYPE_VIDEO;
-        } else if (cardType == FeedItem.CARD_TYPE_IMAGE_TEXT) { // ✅ 对齐 FeedItem 常量
-            return VIEW_TYPE_IMAGE_TEXT;
-        } else {
-            return VIEW_TYPE_TEXT;
+        CardBinder<? extends RecyclerView.ViewHolder> binder = findBinderForItem(item);
+        if (binder != null) {
+            return binder.getViewType();
         }
+        // 兜底：视为文本卡
+        return FeedItem.CARD_TYPE_TEXT;
+    }
+
+    private CardBinder<? extends RecyclerView.ViewHolder> findBinderForItem(FeedItem item) {
+        for (CardBinder<? extends RecyclerView.ViewHolder> binder : cardBinders) {
+            if (binder.isForViewType(item)) {
+                return binder;
+            }
+        }
+        return null;
     }
 
     @NonNull
@@ -177,16 +209,20 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         if (viewType == VIEW_TYPE_FOOTER) {
             View view = inflater.inflate(R.layout.item_feed_footer, parent, false);
             return new FooterViewHolder(view);
-        } else if (viewType == VIEW_TYPE_IMAGE_TEXT) {
-            View view = inflater.inflate(R.layout.item_feed_image, parent, false);
-            return new ImageTextViewHolder(view);
-        } else if (viewType == VIEW_TYPE_VIDEO) {
-            View view = inflater.inflate(R.layout.item_feed_video, parent, false);
-            return new VideoViewHolder(view);
-        } else { // TEXT
-            View view = inflater.inflate(R.layout.item_feed_text, parent, false);
-            return new TextViewHolder(view);
         }
+
+        CardBinder<? extends RecyclerView.ViewHolder> binder = binderMap.get(viewType);
+        if (binder == null) {
+            // 未知类型，兜底使用 TextCard
+            binder = binderMap.get(FeedItem.CARD_TYPE_TEXT);
+        }
+
+        // 这里做一次不安全转换，但 viewType 与 binder 已经通过 map 对齐
+        @SuppressWarnings("unchecked")
+        CardBinder<RecyclerView.ViewHolder> typedBinder =
+                (CardBinder<RecyclerView.ViewHolder>) binder;
+
+        return typedBinder.onCreateViewHolder(inflater, parent);
     }
 
     @Override
@@ -202,13 +238,20 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         FeedItem item = data.get(position);
         if (item == null) return;
 
-        if (holder instanceof TextViewHolder) {
-            bindText((TextViewHolder) holder, item, position);
-        } else if (holder instanceof ImageTextViewHolder) {
-            bindImageText((ImageTextViewHolder) holder, item, position);
-        } else if (holder instanceof VideoViewHolder) {
-            bindVideo((VideoViewHolder) holder, item, position);
+        int viewType = getItemViewType(position);
+        CardBinder<? extends RecyclerView.ViewHolder> binder = binderMap.get(viewType);
+        if (binder == null) {
+            binder = findBinderForItem(item);
         }
+        if (binder == null) {
+            return;
+        }
+
+        @SuppressWarnings("unchecked")
+        CardBinder<RecyclerView.ViewHolder> typedBinder =
+                (CardBinder<RecyclerView.ViewHolder>) binder;
+
+        typedBinder.onBindViewHolder(holder, item, position);
     }
 
     @Override
@@ -220,34 +263,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
     }
 
-    // ===== 各类型卡片绑定逻辑 =====
-
-    private void bindText(TextViewHolder holder, FeedItem item, int position) {
-        holder.tvTitle.setText(item.getTitle());
-        holder.tvContent.setText(item.getContent());
-        setupItemClicks(holder.itemView, item, position);
-    }
-
-    private void bindImageText(ImageTextViewHolder holder, FeedItem item, int position) {
-        holder.tvTitle.setText(item.getTitle());
-        holder.tvContent.setText(item.getContent());
-        // 如果你有占位图资源可以在这里 setImageResource
-        // holder.ivImage.setImageResource(R.drawable.sample_image);
-        setupItemClicks(holder.itemView, item, position);
-    }
-
-    private void bindVideo(VideoViewHolder holder, FeedItem item, int position) {
-        holder.tvTitle.setText("[视频] " + item.getTitle());
-        holder.tvContent.setText(item.getContent());
-        holder.tvCountdown.setText("点击视频区域可暂停/继续");
-
-        // 点击视频区域：手动播放/暂停
-        holder.playerView.setOnClickListener(v ->
-                videoManager.togglePlay(holder.playerView, item)
-        );
-
-        setupItemClicks(holder.itemView, item, position);
-    }
+    // ===== Footer 绑定 =====
 
     private void bindFooter(FooterViewHolder holder) {
         if (!showFooter) {
@@ -275,9 +291,9 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
     }
 
-    // ===== 点击 / 长按删卡 =====
+    // ===== 点击 / 长按删卡：对外暴露给 Binder 使用 =====
 
-    private void setupItemClicks(View itemView, FeedItem item, int position) {
+    public void setupItemClicks(View itemView, FeedItem item, int position) {
         // 单击：Toast 提示
         itemView.setOnClickListener(v ->
                 Toast.makeText(context, "点击卡片：" + item.getTitle(), Toast.LENGTH_SHORT).show()
@@ -301,25 +317,25 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         });
     }
 
-    // ===== ViewHolder 定义 =====
+    // ===== ViewHolder 定义（提供给 Binder & Activity 使用） =====
 
-    static class TextViewHolder extends RecyclerView.ViewHolder {
-        TextView tvTitle;
-        TextView tvContent;
+    public static class TextViewHolder extends RecyclerView.ViewHolder {
+        public TextView tvTitle;
+        public TextView tvContent;
 
-        TextViewHolder(@NonNull View itemView) {
+        public TextViewHolder(@NonNull View itemView) {
             super(itemView);
             tvTitle = itemView.findViewById(R.id.tv_title);
             tvContent = itemView.findViewById(R.id.tv_content);
         }
     }
 
-    static class ImageTextViewHolder extends RecyclerView.ViewHolder {
-        TextView tvTitle;
-        TextView tvContent;
-        ImageView ivImage;
+    public static class ImageTextViewHolder extends RecyclerView.ViewHolder {
+        public TextView tvTitle;
+        public TextView tvContent;
+        public ImageView ivImage;
 
-        ImageTextViewHolder(@NonNull View itemView) {
+        public ImageTextViewHolder(@NonNull View itemView) {
             super(itemView);
             tvTitle = itemView.findViewById(R.id.tv_title);
             tvContent = itemView.findViewById(R.id.tv_content);
@@ -329,12 +345,12 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     // 给 FeedActivity 的自动播放逻辑用到，所以 public
     public static class VideoViewHolder extends RecyclerView.ViewHolder {
-        TextView tvTitle;
-        TextView tvContent;
-        TextView tvCountdown;
-        PlayerView playerView;
+        public TextView tvTitle;
+        public TextView tvContent;
+        public TextView tvCountdown;
+        public PlayerView playerView;
 
-        VideoViewHolder(@NonNull View itemView) {
+        public VideoViewHolder(@NonNull View itemView) {
             super(itemView);
             tvTitle = itemView.findViewById(R.id.tv_title);
             tvContent = itemView.findViewById(R.id.tv_content);
@@ -349,7 +365,6 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
         FooterViewHolder(@NonNull View itemView) {
             super(itemView);
-            // ✅ 对齐 item_feed_footer.xml 中的 id
             progress = itemView.findViewById(R.id.progress);
             tvMessage = itemView.findViewById(R.id.tv_message);
         }
