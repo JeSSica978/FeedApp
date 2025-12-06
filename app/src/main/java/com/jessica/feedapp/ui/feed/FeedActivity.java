@@ -21,6 +21,8 @@ import com.jessica.feedapp.exposure.ExposureDataProvider;
 import com.jessica.feedapp.exposure.ExposureEventType;
 import com.jessica.feedapp.exposure.ExposureTracker;
 import com.jessica.feedapp.model.FeedItem;
+import com.jessica.feedapp.data.FeedCacheManager;
+import com.jessica.feedapp.model.FeedItem;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -47,6 +49,8 @@ public class FeedActivity extends AppCompatActivity {
     private FeedRepository repository; // 数据源
 
     private ExposureTracker exposureTracker;
+
+    private FeedCacheManager cacheManager;  // NEW: 本地缓存管理
 
     private boolean isLoadingMore = false; // 控制 loadMore
     private int loadedCount = 0; // 控制 loadMore
@@ -113,14 +117,14 @@ public class FeedActivity extends AppCompatActivity {
 
         repository = new FeedRepository();
         adapter = new FeedAdapter(this);
+        cacheManager = new FeedCacheManager(this);
 
         initRecycler();
         initRefresh();
         initExposureTracker();
 
-        // 首屏：先显示 Loading，再去加载数据
-        showLoadingState();
-        loadInitialData();
+        // 首屏：优先使用本地缓存“秒开”，再去请求最新数据
+        startWithCacheThenLoadInitial();
     }
 
     // ===== 页面状态切换 =====
@@ -247,6 +251,10 @@ public class FeedActivity extends AppCompatActivity {
         );
     }
 
+    /**
+     * 首屏加载：只负责“请求服务端 + 根据结果更新 UI / 缓存”，
+     * 不再直接控制 showLoadingState（由外部在启动或重试时调用）。
+     */
     private void loadInitialData() {
         handler.postDelayed(() -> {
             // 用随机数模拟网络成功 / 失败，方便演示首屏状态
@@ -254,20 +262,61 @@ public class FeedActivity extends AppCompatActivity {
 
             if (success) {
                 List<FeedItem> items = repository.loadInitial(); // 模拟服务端首屏数据
-                loadedCount = items.size();
-                adapter.setItems(items);
 
                 if (items == null || items.isEmpty()) {
+                    // 服务端返回空：显示 Empty，并清理缓存
+                    adapter.setItems(null);
+                    loadedCount = 0;
                     showEmptyState();
+                    cacheManager.clear();
                 } else {
+                    loadedCount = items.size();
+                    adapter.setItems(items);
                     showContentState();
+
+                    // ✅ 首屏成功后写入本地缓存
+                    cacheManager.saveFeedList(items);
                 }
             } else {
-                showErrorState();
-                Toast.makeText(this, "加载失败，请点击重试", Toast.LENGTH_SHORT).show();
+                // 网络失败：尝试使用本地缓存兜底
+                List<FeedItem> cached = cacheManager.loadFeedList();
+                if (cached != null && !cached.isEmpty()) {
+                    adapter.setItems(cached);
+                    loadedCount = cached.size();
+                    showContentState();
+                    Toast.makeText(
+                            this,
+                            "网络异常，已展示上次缓存内容",
+                            Toast.LENGTH_SHORT
+                    ).show();
+                } else {
+                    // 没有缓存，只能显示错误覆盖层
+                    showErrorState();
+                }
             }
-        }, 600);
+        }, 800); // 延迟 800ms 模拟“网络延迟”
     }
+
+    /**
+     * App 冷启动时调用：
+     * 1. 先尝试用本地缓存填充列表（如果有） -> 首屏秒开
+     * 2. 再调用 loadInitialData() 去请求“服务器”最新数据
+     */
+    private void startWithCacheThenLoadInitial() {
+        List<FeedItem> cached = cacheManager.loadFeedList();
+        if (cached != null && !cached.isEmpty()) {
+            adapter.setItems(cached);
+            loadedCount = cached.size();
+            showContentState();
+        } else {
+            // 没有缓存时，沿用原来的首屏 Loading 覆盖层
+            showLoadingState();
+        }
+
+        // 无论是否有缓存，都去请求一次最新的首屏数据
+        loadInitialData();
+    }
+
 
     private void refreshData() {
         swipeRefreshLayout.setRefreshing(true);
@@ -276,15 +325,26 @@ public class FeedActivity extends AppCompatActivity {
             boolean success = random.nextFloat() < 0.6f;
             if (success) {
                 List<FeedItem> items = repository.refresh();
-                loadedCount = items.size();
-                adapter.setItems(items);
+                if (items == null || items.isEmpty()) {
+                    Toast.makeText(this, "暂无最新内容", Toast.LENGTH_SHORT).show();
+                    // 可以选择清除缓存，也可以保留旧数据，这里保留旧数据体验更好
+                } else {
+                    loadedCount = items.size();
+                    adapter.setItems(items);
+                    showContentState();
+
+                    // ✅ 刷新成功后更新本地缓存
+                    cacheManager.saveFeedList(items);
+                }
             } else {
-                Toast.makeText(this, "刷新失败，请稍后重试", Toast.LENGTH_SHORT).show();
+                // 刷新失败，保留当前列表即可
+                Toast.makeText(this, "刷新失败，已保留当前内容", Toast.LENGTH_SHORT).show();
             }
 
             swipeRefreshLayout.setRefreshing(false);
         }, 800);
     }
+
 
     private void loadMoreData() {
         isLoadingMore = true;
@@ -298,6 +358,9 @@ public class FeedActivity extends AppCompatActivity {
                 loadedCount += more.size();
                 adapter.appendItems(more);
                 adapter.hideFooter();    // 加载成功：追加数据 & 隐藏 footer
+
+                // ✅ 更新缓存，让下次启动能看到“更多之后”的完整列表
+                cacheManager.saveFeedList(adapter.getItems());
             } else {
                 adapter.showLoadMoreError(); // 加载失败：footer 显示“加载失败，点击重试”
                 Toast.makeText(this, "加载更多失败，请点击重试", Toast.LENGTH_SHORT).show();

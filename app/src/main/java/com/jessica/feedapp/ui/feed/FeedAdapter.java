@@ -47,6 +47,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private boolean footerLoading = false;
     private boolean footerError = false;
 
+
     // 给“点击重试”用的回调接口
     public interface OnLoadMoreRetryListener {
         void onRetryLoadMore();
@@ -79,6 +80,12 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         data.addAll(items);
         notifyItemRangeInserted(start, items.size());
     }
+
+    // 获取当前列表（用于本地缓存等场景）
+    public List<FeedItem> getItems() {
+        return new ArrayList<>(data); // 返回一份拷贝，避免外部修改内部 data
+    }
+
 
     // 给曝光模块用的，从“Adapter 的 position”拿到真正的 FeedItem
     public FeedItem getItemAt(int position) {
