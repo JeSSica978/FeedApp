@@ -4,9 +4,9 @@ import android.content.Context;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
-import android.widget.ImageView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -23,20 +23,29 @@ import java.util.List;
 
 /**
  * 信息流列表适配器：
- * - 支持三种 ViewType: 文本卡 / 图文卡 / 视频卡
- * - 支持单列 / 双列混排（通过 FeedItem.spanSize 控制）
- * - 支持 loadMore 底部 Footer（加载中 / 加载失败-点击重试）
- * - 支持点击卡片：Toast 提示
- * - 支持长按卡片：弹窗确认删除
+ * - 文本 / 图文 / 视频 三种卡片
+ * - 底部 footer 展示加载更多状态
+ * - 支持长按删卡
+ * - 为曝光统计提供 getItemAt / getSpanSizeForPosition
  */
-
 public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
-    // 四种布局类型
+    // ===== ViewType 定义 =====
     private static final int VIEW_TYPE_TEXT = 0;
     private static final int VIEW_TYPE_IMAGE_TEXT = 1;
     private static final int VIEW_TYPE_VIDEO = 2;
-    private static final int VIEW_TYPE_FOOTER = 100;  // footer 的类型
+    private static final int VIEW_TYPE_FOOTER = 100;
+
+    // ===== Footer 状态 =====
+    private boolean showFooter = false;
+    private boolean footerLoading = false;
+    private boolean footerError = false;
+
+    public interface OnLoadMoreRetryListener {
+        void onRetryLoadMore();
+    }
+
+    private OnLoadMoreRetryListener loadMoreRetryListener;
 
     private final Context context;
     private final LayoutInflater inflater;
@@ -44,31 +53,18 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     private final FeedVideoManager videoManager;
 
-    // ----- loadMore Footer 状态 -----
-    // 控制底部加载更多那一行的显示文案和状态条
-    private boolean showFooter = false;
-    private boolean footerLoading = false;
-    private boolean footerError = false;
-
-
-    // 给“点击重试”用的回调接口
-    public interface OnLoadMoreRetryListener {
-        void onRetryLoadMore();
-    }
-    private OnLoadMoreRetryListener loadMoreRetryListener;
-
     public FeedAdapter(Context context, FeedVideoManager videoManager) {
         this.context = context;
         this.inflater = LayoutInflater.from(context);
         this.videoManager = videoManager;
     }
 
-
     public void setOnLoadMoreRetryListener(OnLoadMoreRetryListener listener) {
         this.loadMoreRetryListener = listener;
     }
 
-    // ----- 对外数据操作 -----
+    // ===== 对外数据操作 =====
+
     // 重置列表
     public void setItems(List<FeedItem> items) {
         data.clear();
@@ -78,7 +74,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         notifyDataSetChanged();
     }
 
-    // 追加数据（用于 loadMore）
+    // 追加数据（loadMore）
     public void appendItems(List<FeedItem> items) {
         if (items == null || items.isEmpty()) return;
         int start = data.size();
@@ -86,38 +82,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         notifyItemRangeInserted(start, items.size());
     }
 
-    // 获取当前列表（用于本地缓存等场景）
-    public List<FeedItem> getItems() {
-        return new ArrayList<>(data); // 返回一份拷贝，避免外部修改内部 data
-    }
-
-
-    // 给曝光模块用的，从“Adapter 的 position”拿到真正的 FeedItem
-    public FeedItem getItemAt(int position) {
-        // 注意：data.size() 只包含真实的 feed 条目，不包含 footer
-        if (position < 0 || position >= data.size()) return null;
-        return data.get(position);
-    }
-
-    /**
-     * 给 GridLayoutManager 用的 spanSize
-     */
-    public int getSpanSizeForPosition(int position) {
-        // 如果是 footer，直接占满两列
-        if (showFooter && position == getItemCount() - 1) {
-            return 2;
-        }
-        // 防御一下：万一 position 异常，也不要越界
-        if (position < 0 || position >= data.size()) {
-            return 1;
-        }
-        FeedItem item = data.get(position);
-        return item.getSpanSize(); // 1 或 2
-    }
-
-
-    // ----- Footer 状态控制 -----
-    // 显示 “正在加载更多...”
+    // footer：显示“正在加载更多…”
     public void showLoadMoreLoading() {
         showFooter = true;
         footerLoading = true;
@@ -125,7 +90,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         notifyFooterChanged();
     }
 
-    // 显示 “加载失败，点击重试”
+    // footer：显示“加载失败，点击重试”
     public void showLoadMoreError() {
         showFooter = true;
         footerLoading = false;
@@ -133,7 +98,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         notifyFooterChanged();
     }
 
-    // 隐藏 footer（加载完成且没有更多错误提示时使用）
+    // 隐藏 footer
     public void hideFooter() {
         if (showFooter) {
             showFooter = false;
@@ -143,67 +108,92 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
     }
 
-    // 内部小工具：刷新 footer 这一行  把变更通知 RecyclerView
     private void notifyFooterChanged() {
         if (showFooter) {
-            notifyItemChanged(getItemCount() - 1);
+            notifyItemChanged(data.size());
         } else {
             notifyDataSetChanged();
         }
     }
 
-    // ----- RecyclerView.Adapter 必备实现 -----
+    /**
+     * 暴露给 ExposureTracker：根据 position 拿 FeedItem。
+     * 如果是 footer 位置或越界，返回 null。
+     */
+    public FeedItem getItemAt(int position) {
+        if (position < 0 || position >= data.size()) {
+            return null;
+        }
+        return data.get(position);
+    }
+
+    /**
+     * 暴露给 GridLayoutManager 的 SpanSizeLookup：
+     * - footer 占满两列；
+     * - 正常 item 使用自身的 spanSize。
+     */
+    public int getSpanSizeForPosition(int position) {
+        if (isFooterPosition(position)) {
+            return 2;
+        }
+        FeedItem item = getItemAt(position);
+        if (item == null) return 2;
+        return item.getSpanSize();
+    }
+
+    // ===== Adapter 核心实现 =====
+
     @Override
     public int getItemCount() {
         return data.size() + (showFooter ? 1 : 0);
     }
 
+    private boolean isFooterPosition(int position) {
+        return showFooter && position == getItemCount() - 1;
+    }
+
     @Override
     public int getItemViewType(int position) {
-        // 如果有 footer 且 position 是最后一个，就用 footer 类型
-        if (showFooter && position == getItemCount() - 1) {
+        if (isFooterPosition(position)) {
             return VIEW_TYPE_FOOTER;
         }
-
-        // 其他位置仍然根据 cardType 来判断
         FeedItem item = data.get(position);
-        switch (item.getCardType()) {
-            case FeedItem.CARD_TYPE_TEXT:
-                return VIEW_TYPE_TEXT;
-            case FeedItem.CARD_TYPE_IMAGE_TEXT:
-                return VIEW_TYPE_IMAGE_TEXT;
-            case FeedItem.CARD_TYPE_VIDEO:
-                return VIEW_TYPE_VIDEO;
-            default:
-                return VIEW_TYPE_TEXT;
+        int cardType = item.getCardType();
+        if (cardType == FeedItem.CARD_TYPE_VIDEO) {
+            return VIEW_TYPE_VIDEO;
+        } else if (cardType == FeedItem.CARD_TYPE_IMAGE_TEXT) { // ✅ 对齐 FeedItem 常量
+            return VIEW_TYPE_IMAGE_TEXT;
+        } else {
+            return VIEW_TYPE_TEXT;
         }
     }
 
-    // 按 viewType inflate 对应的 xml
     @NonNull
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(
-            @NonNull ViewGroup parent, int viewType) {
-        if (viewType == VIEW_TYPE_TEXT) {
-            View v = inflater.inflate(R.layout.item_feed_text, parent, false);
-            return new TextViewHolder(v);
+            @NonNull ViewGroup parent,
+            int viewType
+    ) {
+        if (viewType == VIEW_TYPE_FOOTER) {
+            View view = inflater.inflate(R.layout.item_feed_footer, parent, false);
+            return new FooterViewHolder(view);
         } else if (viewType == VIEW_TYPE_IMAGE_TEXT) {
-            View v = inflater.inflate(R.layout.item_feed_image, parent, false);
-            return new ImageTextViewHolder(v);
-        }else if (viewType == VIEW_TYPE_VIDEO) {
-            View v = inflater.inflate(R.layout.item_feed_video, parent, false);
-            return new VideoViewHolder(v);
-        } else { // VIEW_TYPE_FOOTER
-            View v = inflater.inflate(R.layout.item_feed_footer, parent, false);
-            return new FooterViewHolder(v);
+            View view = inflater.inflate(R.layout.item_feed_image, parent, false);
+            return new ImageTextViewHolder(view);
+        } else if (viewType == VIEW_TYPE_VIDEO) {
+            View view = inflater.inflate(R.layout.item_feed_video, parent, false);
+            return new VideoViewHolder(view);
+        } else { // TEXT
+            View view = inflater.inflate(R.layout.item_feed_text, parent, false);
+            return new TextViewHolder(view);
         }
     }
 
     @Override
     public void onBindViewHolder(
-            @NonNull RecyclerView.ViewHolder holder, int position) {
-
-        // 如果是 footer → bindFooter()
+            @NonNull RecyclerView.ViewHolder holder,
+            int position
+    ) {
         if (holder instanceof FooterViewHolder) {
             bindFooter((FooterViewHolder) holder);
             return;
@@ -212,7 +202,6 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         FeedItem item = data.get(position);
         if (item == null) return;
 
-        // 否则根据实际 holder 类型调用 bindText / bindImageText / bindVideo
         if (holder instanceof TextViewHolder) {
             bindText((TextViewHolder) holder, item, position);
         } else if (holder instanceof ImageTextViewHolder) {
@@ -226,13 +215,13 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     public void onViewRecycled(@NonNull RecyclerView.ViewHolder holder) {
         super.onViewRecycled(holder);
         if (holder instanceof VideoViewHolder) {
-            VideoViewHolder videoHolder = (VideoViewHolder) holder;
-            videoManager.onViewRecycled(videoHolder.playerView);
+            VideoViewHolder vh = (VideoViewHolder) holder;
+            videoManager.onViewRecycled(vh.playerView);
         }
     }
 
+    // ===== 各类型卡片绑定逻辑 =====
 
-    // ----- 具体绑定逻辑 -----
     private void bindText(TextViewHolder holder, FeedItem item, int position) {
         holder.tvTitle.setText(item.getTitle());
         holder.tvContent.setText(item.getContent());
@@ -242,38 +231,39 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private void bindImageText(ImageTextViewHolder holder, FeedItem item, int position) {
         holder.tvTitle.setText(item.getTitle());
         holder.tvContent.setText(item.getContent());
-        // 这里使用占位图，后续可以接 Glide 等真实图片
-        holder.ivImage.setImageResource(R.drawable.sample_image);
+        // 如果你有占位图资源可以在这里 setImageResource
+        // holder.ivImage.setImageResource(R.drawable.sample_image);
         setupItemClicks(holder.itemView, item, position);
     }
 
     private void bindVideo(VideoViewHolder holder, FeedItem item, int position) {
         holder.tvTitle.setText("[视频] " + item.getTitle());
         holder.tvContent.setText(item.getContent());
-
-        // 绑定播放器并自动播放
-        videoManager.bindAndPlay(holder.playerView, item);
         holder.tvCountdown.setText("点击视频区域可暂停/继续");
 
-        // 视频区域点击 → 播放/暂停
+        // 点击视频区域：手动播放/暂停
         holder.playerView.setOnClickListener(v ->
                 videoManager.togglePlay(holder.playerView, item)
         );
 
-        // 保留原有的点击 / 长按逻辑（卡片整体）
         setupItemClicks(holder.itemView, item, position);
     }
 
-
     private void bindFooter(FooterViewHolder holder) {
-        holder.tvMessage.setOnClickListener(null);
+        if (!showFooter) {
+            holder.itemView.setVisibility(View.GONE);
+            return;
+        }
+        holder.itemView.setVisibility(View.VISIBLE);
+
         if (footerLoading) {
             holder.progress.setVisibility(View.VISIBLE);
-            holder.tvMessage.setText("正在加载更多...");
+            holder.tvMessage.setText("正在加载更多…");
+            holder.itemView.setOnClickListener(null);
         } else if (footerError) {
             holder.progress.setVisibility(View.GONE);
             holder.tvMessage.setText("加载失败，点击重试");
-            holder.tvMessage.setOnClickListener(v -> {
+            holder.itemView.setOnClickListener(v -> {
                 if (loadMoreRetryListener != null) {
                     loadMoreRetryListener.onRetryLoadMore();
                 }
@@ -281,18 +271,19 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         } else {
             holder.progress.setVisibility(View.GONE);
             holder.tvMessage.setText("");
+            holder.itemView.setOnClickListener(null);
         }
     }
 
-    // ----- 点击 / 长按逻辑（点击 Toast，长按删卡） -----
+    // ===== 点击 / 长按删卡 =====
+
     private void setupItemClicks(View itemView, FeedItem item, int position) {
-        // 单击Toast
+        // 单击：Toast 提示
         itemView.setOnClickListener(v ->
-                Toast.makeText(context, "点击卡片：" + item.getTitle(),
-                        Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "点击卡片：" + item.getTitle(), Toast.LENGTH_SHORT).show()
         );
 
-        // 长按删除
+        // 长按：删除卡片
         itemView.setOnLongClickListener(v -> {
             new AlertDialog.Builder(context)
                     .setTitle("删除卡片")
@@ -300,8 +291,8 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     .setPositiveButton("删除", (dialog, which) -> {
                         int pos = position;
                         if (pos >= 0 && pos < data.size()) {
-                            data.remove(pos);   // 从数据源移除
-                            notifyItemRemoved(pos);  // // 通知 RecyclerView 局部刷新
+                            data.remove(pos);
+                            notifyItemRemoved(pos);
                         }
                     })
                     .setNegativeButton("取消", null)
@@ -310,8 +301,9 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         });
     }
 
-    // --- ViewHolder 定义 ---
-    class TextViewHolder extends RecyclerView.ViewHolder {
+    // ===== ViewHolder 定义 =====
+
+    static class TextViewHolder extends RecyclerView.ViewHolder {
         TextView tvTitle;
         TextView tvContent;
 
@@ -322,7 +314,7 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
     }
 
-    class ImageTextViewHolder extends RecyclerView.ViewHolder {
+    static class ImageTextViewHolder extends RecyclerView.ViewHolder {
         TextView tvTitle;
         TextView tvContent;
         ImageView ivImage;
@@ -335,7 +327,8 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
     }
 
-    class VideoViewHolder extends RecyclerView.ViewHolder {
+    // 给 FeedActivity 的自动播放逻辑用到，所以 public
+    public static class VideoViewHolder extends RecyclerView.ViewHolder {
         TextView tvTitle;
         TextView tvContent;
         TextView tvCountdown;
@@ -350,15 +343,15 @@ public class FeedAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
     }
 
-    class FooterViewHolder extends RecyclerView.ViewHolder {
+    static class FooterViewHolder extends RecyclerView.ViewHolder {
         ProgressBar progress;
         TextView tvMessage;
 
         FooterViewHolder(@NonNull View itemView) {
             super(itemView);
+            // ✅ 对齐 item_feed_footer.xml 中的 id
             progress = itemView.findViewById(R.id.progress);
             tvMessage = itemView.findViewById(R.id.tv_message);
         }
     }
 }
-

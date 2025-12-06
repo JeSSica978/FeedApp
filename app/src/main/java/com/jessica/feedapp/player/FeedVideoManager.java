@@ -13,12 +13,16 @@ import com.jessica.feedapp.model.FeedItem;
 
 /**
  * 单实例视频播放器管理器：
- * - 内部只维护一个 ExoPlayer
- * - 根据当前可见的视频卡片，动态把播放器绑定到对应的 PlayerView 上
+ * - 只维护一个 ExoPlayer
+ * - 可绑定到任意一个视频卡片的 PlayerView 上
+ * - 支持手动点击播放/暂停
+ * - 支持根据 itemId 执行自动播放/暂停（给曝光事件用）
  */
 public class FeedVideoManager {
 
     private final ExoPlayer player;
+
+    // 当前绑定的 View & itemId
     private PlayerView currentPlayerView;
     private long currentItemId = -1L;
 
@@ -28,7 +32,7 @@ public class FeedVideoManager {
     }
 
     /**
-     * 绑定到指定卡片并自动播放
+     * 手动或自动绑定到指定卡片并播放（会替换之前的绑定）
      */
     public void bindAndPlay(@NonNull PlayerView playerView, @NonNull FeedItem item) {
         String videoUrl = item.getImageUrl(); // 这里把 imageUrl 当作视频 URL 使用
@@ -37,10 +41,16 @@ public class FeedVideoManager {
             return;
         }
 
+        // 如果之前有绑定到别的 View，先解绑
+        if (currentPlayerView != null && currentPlayerView != playerView) {
+            currentPlayerView.setPlayer(null);
+        }
+
         currentPlayerView = playerView;
         currentItemId = item.getId();
 
         playerView.setPlayer(player);
+
         MediaItem mediaItem = MediaItem.fromUri(Uri.parse(videoUrl));
         player.setMediaItem(mediaItem);
         player.prepare();
@@ -48,15 +58,29 @@ public class FeedVideoManager {
     }
 
     /**
-     * 点击同一张卡片时的播放/暂停切换
+     * 点击当前卡片时的播放/暂停切换。
      */
     public void togglePlay(@NonNull PlayerView playerView, @NonNull FeedItem item) {
         if (playerView == currentPlayerView && item.getId() == currentItemId) {
-            // 同一张卡片 → 切换播放/暂停
             player.setPlayWhenReady(!player.getPlayWhenReady());
         } else {
-            // 切到另一张卡片 → 重新绑定并从头播放
             bindAndPlay(playerView, item);
+        }
+    }
+
+    /**
+     * 暂停当前正在播放的视频。
+     */
+    public void pause() {
+        player.setPlayWhenReady(false);
+    }
+
+    /**
+     * 如果当前播放的就是某个 itemId，对其进行暂停（给曝光 DISAPPEAR 时使用）。
+     */
+    public void pauseIfMatching(long itemId) {
+        if (itemId == currentItemId) {
+            player.setPlayWhenReady(false);
         }
     }
 
@@ -73,14 +97,7 @@ public class FeedVideoManager {
     }
 
     /**
-     * Activity.onPause：暂停当前播放。
-     */
-    public void pause() {
-        player.setPlayWhenReady(false);
-    }
-
-    /**
-     * Activity.onDestroy：彻底释放播放器资源。
+     * Activity.onDestroy 时调用，释放播放器资源。
      */
     public void release() {
         currentPlayerView = null;
